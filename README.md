@@ -30,11 +30,23 @@ share a privileged service identity, or bypass AOS RBAC/governance.
 | `aos_list_intents` | `GET /intents` | Hides intents that need an LLM inside AOS |
 | `aos_execute_intent` | `POST /ask_structured` | Uses `async: true`; no automatic retries |
 | `aos_get_task` | `GET /task?id=...` | Authenticated task access |
+| `aos_wait_task` | `GET /task?id=...`, repeated | Polls with backoff for up to 60 s until the task leaves pending/processing/running/await_callback; read-only |
 | `aos_list_tasks` | `GET /api/v1/tasks` | Authenticated, owner-scoped by AOS |
+| `aos_review_approval` | `GET /task` + `GET /api/v1/tasks` | What a task waiting at a human step asks for and which checks it passed; read-only, with an MCP Apps card |
 
 Human approval/rejection and clarification reply are intentionally not exposed in the initial MCP
 surface. They should remain explicit human actions in the client, subject to AOS ownership,
 oversight and incompatible-function checks.
+
+### Approval card (MCP Apps)
+
+`aos_review_approval` links to `ui://aos/approval-card-<hash>.html` (`text/html;profile=mcp-app`);
+the hash of the card is part of the URI because hosts cache UI resources by URI.
+Hosts that render MCP Apps show it as a card: the request, the checks already passed, the
+Prudence decision, and a button that asks the host to open the AOS console on that task
+(`AOS_CONSOLE_URL/?taskId=…`), where an overseer decides it signed in as themselves. The card
+calls no tool, so neither it nor the model can approve or reject: this server signs in as the
+requester, whom four eyes would refuse anyway. Other hosts get the same review as text.
 
 ## Requirements
 
@@ -90,7 +102,9 @@ support and directory conventions vary by client; use the client-specific instal
   `{id, status}`. It has no idempotency-key contract in the inspected AOS implementation.
 - Parameter values must be strings. A task with a missing required parameter or another value type
   ends in `error`.
-- `/task?id=...` returns task state and may return `pending` while work continues.
+- `/task?id=...` returns task state and may return `pending` while work continues. An id AOS never
+  issued (or whose state expired) answers 404, so `aos_wait_task` reports it as an error instead
+  of waiting out its timeout.
 - `/intents` returns `type`, `description`, optional `example`, `required_params`,
   `allow_dangerous` and `requires_llm`; this package tolerates older servers without the last three.
 - AOS authentication middleware expects a bearer JWT/OIDC token. The `API_KEY` helper in selected

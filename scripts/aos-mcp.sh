@@ -15,4 +15,7 @@ response="$(curl -fsS --max-time 5 -X POST "$AOS_BASE_URL/auth/login" \
 AOS_ACCESS_TOKEN="$(node -e 'console.log(JSON.parse(process.argv[1]).token)' "$response")"
 
 export AOS_BASE_URL AOS_ACCESS_TOKEN
+# The AOS console (its ui/ dev server) where an overseer decides human steps; the approval card
+# links there.
+export AOS_CONSOLE_URL="${AOS_CONSOLE_URL:-http://localhost:5173}"
 exec node "$KIT/packages/aos-mcp-server/dist/index.js"

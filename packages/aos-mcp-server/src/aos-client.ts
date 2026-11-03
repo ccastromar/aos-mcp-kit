@@ -1,4 +1,5 @@
 import type { Config } from "./config.js";
+import { buildApprovalReview, type ApprovalReview } from "./approval.js";
 
 export interface Intent {
   type: string;
@@ -91,4 +92,58 @@ export class AosClient {
   async listTasks(): Promise<unknown> {
     return this.request("api/v1/tasks", { method: "GET" });
   }
+
+  /** What a person needs to decide a task's human step: the task, plus its request and checks. */
+  async reviewApproval(id: string): Promise<ApprovalReview> {
+    const task = (await this.getTask(id)) as { id: string; status: string; data?: unknown; gate?: string; params?: Record<string, string>; completed_steps?: string[] | null };
+    const listing = (await this.listTasks()) as Array<Record<string, unknown>> | undefined;
+    const listed = Array.isArray(listing) ? listing.find((t) => t.id === id) : undefined;
+    return buildApprovalReview({ ...task, id }, listed, this.config.consoleUrl);
+  }
+
+  // waitForTask polls /task until the status leaves the in-flight set or timeoutMs elapses.
+  // Human gates, clarifications and every final outcome return at once: the caller acts on them.
+  async waitForTask(
+    id: string,
+    timeoutMs: number,
+    signal?: AbortSignal
+  ): Promise<{ settled: boolean; waitedMs: number; task: unknown }> {
+    const started = Date.now();
+    let delayMs = 500;
+    for (;;) {
+      const task = await this.getTask(id);
+      const status = (task as { status?: unknown } | undefined)?.status;
+      const waitedMs = Date.now() - started;
+      if (typeof status !== "string" || !IN_FLIGHT_STATUSES.has(status)) {
+        return { settled: true, waitedMs, task };
+      }
+      const remainingMs = timeoutMs - waitedMs;
+      if (remainingMs <= 0 || signal?.aborted) {
+        return { settled: false, waitedMs, task };
+      }
+      await sleep(Math.min(delayMs, remainingMs), signal);
+      delayMs = Math.min(delayMs * 2, 5_000);
+    }
+  }
+}
+
+// Statuses /task reports while AOS is still working or waiting on a provider callback.
+export const IN_FLIGHT_STATUSES = new Set([
+  "pending",
+  "processing",
+  "running",
+  "await_callback",
+  "callback_received"
+]);
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+    function done() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    }
+  });
 }

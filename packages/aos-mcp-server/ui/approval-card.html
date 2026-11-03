@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AOS human step</title>
+<style>
+:root{--bg:#fff;--fg:#1d1c1a;--muted:#6b675f;--line:#e3e0d9;--soft:#f6f5f2;--accent:#3554d1;--warn:#b26b00}
+:root[data-theme="dark"]{--bg:#1e1d1b;--fg:#ecebe7;--muted:#a19d94;--line:#33312d;--soft:#262522;--accent:#8ea2ff;--warn:#fdb022}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1e1d1b;--fg:#ecebe7;--muted:#a19d94;--line:#33312d;--soft:#262522;--accent:#8ea2ff;--warn:#fdb022}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,sans-serif}
+main{padding:16px}
+.eyebrow{font-size:12px;color:var(--warn);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+h1{font-size:17px;margin:2px 0 4px}
+.meta{color:var(--muted);font-size:13px;margin:0 0 12px}
+table{width:100%;border-collapse:collapse;margin:0 0 12px}
+td{padding:4px 0;border-bottom:1px solid var(--line);vertical-align:top}
+td:first-child{color:var(--muted);width:38%;padding-right:12px}
+td:last-child{word-break:break-word}
+h2{font-size:13px;margin:12px 0 6px;color:var(--muted);font-weight:600}
+ul{margin:0 0 12px;padding:0;list-style:none}
+li{padding:6px 10px;background:var(--soft);border-radius:8px;margin-bottom:4px}
+li b{font-weight:600}
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:14px}
+button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:8px 14px;background:var(--accent);color:#fff;cursor:pointer}
+button[disabled]{opacity:.5;cursor:not-allowed}
+.note{color:var(--muted);font-size:12px;margin:10px 0 0}
+code{font-size:12px}
+code.url{user-select:all;word-break:break-all}
+a{color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+<main id="root"><p class="meta">Loading the human step…</p></main>
+<script>
+(() => {
+  // MCP Apps (protocol 2026-01-26): JSON-RPC over postMessage with the host. The card reads the
+  // tool result and can ask the host to open a link; it calls no tool, so it cannot decide.
+  const root = document.getElementById("root");
+  let nextId = 1;
+  const pending = new Map();
+  const send = (msg) => window.parent.postMessage({ jsonrpc: "2.0", ...msg }, "*");
+  // Resolves with the result, { error } or, after timeoutMs, { timeout: true }: a host that
+  // ignores a request must not leave the card silent.
+  const request = (method, params, timeoutMs) => new Promise((resolve) => {
+    const id = nextId++;
+    pending.set(id, resolve);
+    send({ id, method, params });
+    if (timeoutMs) setTimeout(() => { if (pending.delete(id)) resolve({ timeout: true }); }, timeoutMs);
+  });
+  const failed = (r) => !r || r.error || r.timeout || r.isError;
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const resize = () => send({ method: "ui/notifications/size-changed", params: { height: document.documentElement.scrollHeight } });
+
+  // Ask the host to open the console. Some hosts refuse (Claude Code desktop answers open-link with
+  // an error, drops ui/message without a trace and blocks plain links), so say so plainly and point
+  // at the link on the card and in the reply rather than claim it went anywhere.
+  async function openConsole(url, status) {
+    status.textContent = "Asking the app to open the console…";
+    const opened = await request("ui/open-link", { url }, 2000);
+    status.textContent = failed(opened)
+      ? "This app cannot open links from the card. Copy the console link above, or use the link in the reply."
+      : "The app is opening the console.";
+    resize();
+  }
+
+  function render(r) {
+    if (!r || !r.taskId) { root.innerHTML = '<p class="meta">No task to show.</p>'; return resize(); }
+    if (!r.pending) {
+      root.innerHTML = `<p class="eyebrow">AOS</p><h1>Task ${esc(r.taskId)}</h1><p class="meta">Not waiting for a human decision (status: <b>${esc(r.status)}</b>).</p>`;
+      return resize();
+    }
+    const rows = Object.entries(r.request || {}).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("");
+    const checks = (r.checks || []).map((c) => `<li><b>${esc(c.step)}</b> · ${esc(c.outcome)}</li>`).join("");
+    const gov = r.governance ? `<h2>Governance</h2><table>${r.governance.aiSystemId ? `<tr><td>AI system</td><td><code>${esc(r.governance.aiSystemId)}</code></td></tr>` : ""}${r.governance.decisionId ? `<tr><td>Prudence decision</td><td><code>${esc(r.governance.decisionId)}</code></td></tr>` : ""}</table>` : "";
+    root.innerHTML = `
+      <p class="eyebrow">Waiting for a human decision · ${esc(r.gate)}</p>
+      <h1>${esc(r.intent || r.pipeline || "AOS task")}</h1>
+      <p class="meta">Requested by <b>${esc(r.requestedBy || "unknown")}</b>${r.createdAt ? ` · ${esc(new Date(r.createdAt).toLocaleString())}` : ""} · task <code>${esc(r.taskId)}</code></p>
+      <h2>What is asked</h2><table>${rows || '<tr><td colspan="2">No parameters</td></tr>'}</table>
+      ${checks ? `<h2>Checks already passed</h2><ul>${checks}</ul>` : ""}
+      ${gov}
+      <div class="actions">
+        <button id="decide" ${r.decideAt ? "" : "disabled"}>Decide in the AOS console</button>
+      </div>
+      ${r.decideAt ? `<p class="note">Console link: <code class="url">${esc(r.decideAt)}</code></p><p class="note" id="link-status" aria-live="polite"></p>` : ""}
+      <p class="note">An overseer decides it, signed in as themselves; whoever asked for it cannot. This assistant can neither approve nor reject it.${r.decideAt ? "" : " Set AOS_CONSOLE_URL on the MCP server to link the console."}</p>`;
+    const button = document.getElementById("decide");
+    if (button && r.decideAt) button.addEventListener("click", () => openConsole(r.decideAt, document.getElementById("link-status")));
+    resize();
+  }
+
+  window.addEventListener("message", (event) => {
+    const msg = event.data;
+    if (!msg || msg.jsonrpc !== "2.0") return;
+    if (msg.id !== undefined && pending.has(msg.id)) {
+      pending.get(msg.id)(msg.error ? { error: msg.error } : (msg.result ?? {}));
+      pending.delete(msg.id);
+      return;
+    }
+    switch (msg.method) {
+      case "ui/notifications/tool-input":
+        root.innerHTML = `<p class="meta">Looking up task ${esc(msg.params?.arguments?.id)}…</p>`;
+        resize();
+        break;
+      case "ui/notifications/tool-result":
+        render(msg.params?.structuredContent);
+        break;
+      case "ui/notifications/host-context-changed":
+        if (msg.params?.theme) document.documentElement.dataset.theme = msg.params.theme;
+        break;
+      case "ui/resource-teardown":
+        send({ id: msg.id, result: {} });
+        break;
+    }
+  });
+
+  request("ui/initialize", {
+    appInfo: { name: "aos-approval-card", version: "0.1.0" },
+    appCapabilities: {},
+    protocolVersion: "2026-01-26"
+  }).then((result) => {
+    const theme = result?.hostContext?.theme;
+    if (theme) document.documentElement.dataset.theme = theme;
+    send({ method: "ui/notifications/initialized", params: {} });
+  });
+})();
+</script>
+</body>
+</html>

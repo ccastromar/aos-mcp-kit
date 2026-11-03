@@ -1,0 +1,223 @@
+# The Tribunal's attacks. Each one tries to break one guarantee of the AOS · Prudence · Ernest
+# stack and says what must happen instead. `technique` names the code that carries it out
+# (src/attacks.ts); `params` feed it. `rings` says where it may run:
+#   lab         a disposable stack, every attack (destructive ones included)
+#   production  a live stack during service hours: only attacks with no lasting effect beyond
+#               labelled evidence, run as the Tribunal's own identity against decoy resources
+# `containment` is what the Tribunal does at once when an attack gets through (always towards
+# the more restrictive side); the repair itself is proposed to a person, never applied.
+# New findings become new attacks here, and stay.
+
+attacks:
+  - id: callback-unsigned
+    title: "Finish a custody operation with an intercepted callback token, unsigned"
+    guarantee: "Only the provider that holds the secret can answer a signed wait"
+    rings: [lab, production]
+    technique: callback_forgery
+    params: { variant: unsigned }
+    expect: "AOS answers 401 and the wait stays open"
+    containment: alert
+
+  - id: callback-wrong-key
+    title: "Finish it signing with a guessed key"
+    guarantee: "A signature only counts with the provider's own secret"
+    rings: [lab, production]
+    technique: callback_forgery
+    params: { variant: wrong_key }
+    expect: "AOS answers 401 and the wait stays open"
+    containment: alert
+
+  - id: token-exposure
+    title: "Look for a live callback token in what AOS shows its users"
+    guarantee: "No credential leaves AOS through the task API"
+    rings: [lab, production]
+    technique: token_exposure
+    expect: "The token appears in no task listing or task view"
+    containment: alert
+
+  - id: unknown-task
+    title: "Ask for a task AOS never issued"
+    guarantee: "A made-up id is not presented as work in progress"
+    rings: [lab, production]
+    technique: unknown_task
+    expect: "404"
+    containment: alert
+
+  - id: foreign-task
+    title: "Read another person's task result"
+    guarantee: "A task is visible to its owner and to oversight or audit only"
+    rings: [lab]
+    technique: foreign_task
+    expect: "404 for the other person"
+    containment: alert
+
+  - id: prohibited-system
+    title: "Run a prohibited AI system (social scoring)"
+    guarantee: "Prudence denies a prohibited practice and AOS runs none of its steps"
+    rings: [lab, production]
+    technique: governed_denial
+    params:
+      operation: governance-demo.social_scoring
+      inputs: { citizenId: CIT-7781 }
+      systemEnv: AOS_PRUDENCE_SOCIAL_SCORING_SYSTEM_ID
+    expect: "governance_blocked with DENY, no step executed"
+    containment: suspend_ai_system
+
+  - id: suspended-system
+    title: "Run an AI system suspended after an incident"
+    guarantee: "A suspended system stays stopped"
+    rings: [lab, production]
+    technique: governed_denial
+    params:
+      operation: governance-demo.translate_message
+      inputs: { text: "the branch opens at nine", targetLanguage: Portuguese }
+      systemEnv: AOS_PRUDENCE_TRANSLATOR_SYSTEM_ID
+    expect: "governance_blocked with DENY, no step executed"
+    containment: suspend_ai_system
+
+  - id: run-without-trace
+    title: "Run a governed system and look for a run that left no proof"
+    guarantee: "Every governed run leaves its decision and its execution in Ernest, and a report in Prudence"
+    rings: [lab, production]
+    technique: evidence_trail
+    params:
+      operation: governance-demo.spam_check
+      inputs: { messageId: MSG-TRIBUNAL }
+    expect: "Ernest holds the decision and the execution under the run's id"
+    containment: alert
+
+  - id: high-risk-transfer
+    title: "Pay for a customer compliance should refuse"
+    guarantee: "Compliance sees the measured risk and stops the payment"
+    rings: [lab]
+    technique: transfer_outcome
+    params:
+      inputs: { amount: "300", currency: EUR, customerId: CUST-42, fromAccount: "123", toAccount: "456", concept: "Tribunal", fromPhone: "600111222", toPhone: "600333444" }
+    expect: "rejected by compliance, payment not executed"
+    containment: alert
+
+  - id: unreadable-amount
+    title: "Slip a payment past its approval with an amount that is not a number"
+    guarantee: "A condition that cannot be read never removes an approval"
+    rings: [lab]
+    technique: transfer_outcome
+    params:
+      inputs: { amount: "a lot", currency: EUR, customerId: CUST-7, fromAccount: "123", toAccount: "456", concept: "Tribunal", fromPhone: "600111222", toPhone: "600333444" }
+    expect: "refused or held for approval, payment not executed"
+    containment: alert
+
+  - id: pay-before-approval
+    title: "Deploy a pipeline that pays before its approval"
+    guarantee: "AOS refuses to load a dangerous step with no approval before it"
+    rings: [lab]
+    technique: unsafe_definitions
+    expect: "the definitions are refused"
+    containment: alert
+
+  - id: self-approval
+    title: "Approve your own human step"
+    guarantee: "Whoever asks for a payment cannot approve it (four eyes)"
+    rings: [lab]
+    technique: self_approval
+    params:
+      operation: banking.send_bitcoin
+      gate: manager_review
+      inputs: { amount: "0.01", fromAddress: tribunal-from, toAddress: tribunal-to, concept: "Tribunal", userId: tribunal, fromPhone: "600111222", toPhone: "600333444" }
+    expect: "403 for the requester; a separate overseer can still approve"
+    containment: alert
+
+  - id: pipeline-override
+    title: "Replace a value the pipeline fixes, from the request"
+    guarantee: "What a pipeline gives a step cannot be changed by whoever asks"
+    rings: [lab, production]
+    technique: pipeline_override
+    params:
+      operation: crm.customer_360
+      inputs: { customerId: CUST-7, days: "3650" }
+      tool: crm.get_interactions
+      field: windowDays
+      expected: "30"
+    expect: "the tool receives the pipeline's 30 days, not the request's 3650"
+    containment: alert
+
+  - id: amount-limit
+    title: "Transfer more than the intent's limit"
+    guarantee: "max_amount is enforced before anything runs"
+    rings: [lab]
+    technique: transfer_outcome
+    params:
+      inputs: { amount: "5000", currency: EUR, customerId: CUST-7, fromAccount: "123", toAccount: "456", concept: "Tribunal", fromPhone: "600111222", toPhone: "600333444" }
+    expect: "refused, payment not executed"
+    containment: alert
+
+  - id: rbac-denied
+    title: "Pay with an identity whose role does not allow it"
+    guarantee: "An intent a role is not granted is refused"
+    rings: [lab, production]
+    technique: rbac_denied
+    params:
+      roles: [guest]
+      operation: banking.transfer
+      inputs: { amount: "10", currency: EUR, fromAccount: "123", toAccount: "456", concept: "Tribunal", fromPhone: "600111222", toPhone: "600333444" }
+    expect: "refused, no step executed"
+    containment: alert
+
+  - id: workspace-escape
+    title: "Write a file outside the workspace with ../"
+    guarantee: "Workspace tools never leave their root"
+    rings: [lab]
+    technique: workspace_escape
+    params: { content: "written by the governance Tribunal" }
+    expect: "refused, no file outside the root"
+    containment: alert
+
+  - id: pdp-person-token
+    title: "Ask Prudence's PDP for a decision with a person's token"
+    guarantee: "Only a workload identity with pdp.decide gets decisions"
+    rings: [lab, production]
+    technique: pdp_person_token
+    params: { pipeline: pipeline_aos_spam_check, systemEnv: AOS_PRUDENCE_SPAM_SYSTEM_ID }
+    expect: "401 or 403"
+    containment: alert
+
+  - id: pdp-subject-spoof
+    title: "Claim to be someone else when asking the PDP"
+    guarantee: "The decision's subject comes from the token, never from the request"
+    rings: [lab, production]
+    technique: pdp_subject_spoof
+    params: { spoofed: bob@bank.eu, pipeline: pipeline_aos_spam_check, systemEnv: AOS_PRUDENCE_SPAM_SYSTEM_ID }
+    expect: "Ernest records the token's subject, not bob@bank.eu"
+    containment: alert
+
+  - id: ernest-read-key-write
+    title: "Write evidence to Ernest with its read-only key"
+    guarantee: "Reading evidence never grants writing it"
+    rings: [lab, production]
+    technique: ernest_read_key_write
+    expect: "401 or 403"
+    containment: alert
+
+  - id: dev-login-live
+    title: "Sign in to a live AOS through the development login"
+    guarantee: "The development login is off outside development"
+    rings: [production]
+    technique: dev_login_off
+    expect: "404"
+    containment: alert
+
+  - id: ledger-tamper
+    title: "Alter a block in an exported copy of Ernest's chain"
+    guarantee: "Any change to recorded evidence is detected by an independent verifier"
+    rings: [lab, production]
+    technique: ledger_tamper
+    expect: "the live chain verifies; the altered copy breaks at the altered block"
+    containment: alert
+
+  # Planned: listed so the record says what is not yet covered.
+  - id: evidence-gap
+    title: "Report a run whose evidence never reaches Ernest"
+    guarantee: "Prudence flags each run without evidence, even when later ones have it"
+    rings: [lab]
+    technique: planned
+    expect: "REPORTED_NOT_EVIDENCED for that run"
+    containment: alert

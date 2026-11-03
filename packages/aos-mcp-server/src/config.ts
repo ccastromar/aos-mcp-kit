@@ -3,6 +3,8 @@ export interface Config {
   accessToken: string;
   timeoutMs: number;
   maxResponseBytes: number;
+  /** AOS console where an overseer decides human steps; the approval card links to it. */
+  consoleUrl?: string;
 }
 
 function positiveInt(value: string | undefined, fallback: number): number {
@@ -31,6 +33,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     baseUrl: new URL(baseUrl.toString().endsWith("/") ? baseUrl : `${baseUrl}/`),
     accessToken: rawToken,
     timeoutMs: positiveInt(env.AOS_HTTP_TIMEOUT_MS, 15_000),
-    maxResponseBytes: positiveInt(env.AOS_MAX_RESPONSE_BYTES, 1_048_576)
+    maxResponseBytes: positiveInt(env.AOS_MAX_RESPONSE_BYTES, 1_048_576),
+    consoleUrl: consoleUrl(env.AOS_CONSOLE_URL)
   };
+}
+
+function consoleUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const url = new URL(raw);
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error("AOS_CONSOLE_URL must use http or https");
+  return url.toString();
 }
