@@ -4,7 +4,9 @@ An external integration package for AOS. It contains:
 - an MCP server that calls the existing AOS HTTP API;
 - an `aos-executor` Agent Skill;
 - an `aos-pipeline-designer` Agent Skill for editing AOS YAML definitions in a checked-out AOS repository;
-- an API contract note.
+- an API contract note;
+- the governance Tribunal (`packages/governance-tribunal`), which attacks a running stack and files
+  what held (see [Governance Tribunal](#governance-tribunal)).
 
 ## Architecture
 
@@ -114,11 +116,36 @@ The MCP client has no retry logic for POST operations. A timeout is an unknown o
 that AOS did not accept or execute the task. Query task state when an ID was received; do not
 blindly submit again.
 
+## Governance Tribunal
+
+`packages/governance-tribunal` runs a catalog of attacks (`catalog.yaml`) against a running
+AOS · Prudence · Ernest stack. Each attack tries to break one guarantee: forged custody callbacks,
+another user's task, self-approval, a dangerous step before its approval, a write with Ernest's read
+key, a spoofed PDP subject. Each one states what must happen instead. When an attack gets through, the
+Tribunal contains it at once (an alert, or suspending the AI system in Prudence) and proposes the
+repair to a person; it never applies one. Every run files `report.json` and `expediente.html`.
+
+```bash
+cd packages/governance-tribunal && npm ci && npm run build
+scripts/tribunal-local.sh                          # lab ring against the local stack
+scripts/tribunal-local.sh --only self-approval     # selected attacks
+```
+
+`scripts/tribunal-local.sh` expects the stack from `scripts/aos-local.sh` (with
+`AOS_LOCAL_PRUDENCE=1 AOS_LOCAL_ERNEST=1`), Prudence's `backend-sso.sh` and its test Keycloak. It
+signs in through development logins and test-realm users, so never point it at a real deployment.
+Records go to `.local/tribunal/` unless `TRIBUNAL_OUT` says otherwise; local overrides can live in
+`.local/tribunal.env`. The `production` ring runs only the attacks with no lasting effect, against
+decoy resources, and refuses to start without `TRIBUNAL_PRODUCTION_APPROVED=yes`, set once the
+stack's owner has approved it.
+
+Exit code: 0 when every attack held, 2 on a breach, 1 when the run itself failed.
+
 ## Development
 
 ```bash
-npm test
-npm run build
+cd packages/aos-mcp-server
+npm test        # builds, then runs the tests
 ```
 
 The test suite uses mocked HTTP responses. It does not claim to test an actual AOS deployment.

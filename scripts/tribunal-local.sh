@@ -11,7 +11,6 @@ set -euo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCAL="$KIT/.local"
 AOS_REPO="${AOS_REPO:-$KIT/../aos-agentic-orchestration-system}"
-DOCS="${CHESTERTOWN_DOCS:-$KIT/../chestertown-docs}"
 
 # AI system ids (Prudence's aos-demo-env.sh) and the Ernest key Prudence uses for reads.
 set -a
@@ -19,11 +18,13 @@ set -a
 [[ -f "$LOCAL/prudence-ernest.env" ]] && source "$LOCAL/prudence-ernest.env"
 # Ernest's read-only key, for the attack that tries to write with it.
 [[ -f "$LOCAL/tribunal-ernest.env" ]] && source "$LOCAL/tribunal-ernest.env"
+# Local overrides, e.g. TRIBUNAL_OUT to file the records somewhere else.
+[[ -f "$LOCAL/tribunal.env" ]] && source "$LOCAL/tribunal.env"
 set +a
 export TRIBUNAL_WORKSPACE_ROOT="${TRIBUNAL_WORKSPACE_ROOT:-$LOCAL/workspace}"
 export TRIBUNAL_ERNEST_HASH_VECTORS="${TRIBUNAL_ERNEST_HASH_VECTORS:-$KIT/../ai-blockchain-provenance/testdata/hash-golden-vectors.json}"
 
-export TRIBUNAL_AOS_URL="${TRIBUNAL_AOS_URL:-http://127.0.0.1:8080}"
+export TRIBUNAL_AOS_URL="${TRIBUNAL_AOS_URL:-http://127.0.0.1:${AOS_LOCAL_PORT:-8080}}"
 export TRIBUNAL_AOS_BIN="${TRIBUNAL_AOS_BIN:-$LOCAL/aos}"
 export TRIBUNAL_AOS_DEFINITIONS="${TRIBUNAL_AOS_DEFINITIONS:-$AOS_REPO/definitions}"
 export TRIBUNAL_ERNEST_URL="${TRIBUNAL_ERNEST_URL:-http://127.0.0.1:3001}"
@@ -33,6 +34,6 @@ export TRIBUNAL_PRUDENCE_TOKEN_URL="${TRIBUNAL_PRUDENCE_TOKEN_URL:-http://localh
 # The test realm's demo author (Prudence scripts/README.md); containment opens incidents as them.
 export TRIBUNAL_PRUDENCE_USER="${TRIBUNAL_PRUDENCE_USER:-alice}"
 export TRIBUNAL_PRUDENCE_PASSWORD="${TRIBUNAL_PRUDENCE_PASSWORD:-alice}"
-if [[ -d "$DOCS" ]]; then export TRIBUNAL_OUT="${TRIBUNAL_OUT:-$DOCS/tribunal}"; else export TRIBUNAL_OUT="${TRIBUNAL_OUT:-$LOCAL/tribunal}"; fi
+export TRIBUNAL_OUT="${TRIBUNAL_OUT:-$LOCAL/tribunal}"
 
 node "$KIT/packages/governance-tribunal/dist/index.js" --ring lab "$@"
