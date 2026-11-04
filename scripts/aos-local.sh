@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Runs a local AOS in deterministic mode with mock tools, on port 8080. For development only: its
-# development login gives anyone who can reach the port an admin token, and AOS listens on all
-# interfaces. Stop it with Ctrl-C when not in use.
+# Runs a local AOS in deterministic mode with mock tools, on port 8080 (AOS_LOCAL_PORT to change
+# it). For development only: its development login gives anyone who can reach the port an admin
+# token, and AOS listens on all interfaces. Stop it with Ctrl-C when not in use.
 #
 #   scripts/aos-local.sh                      # no Prudence
 #   AOS_LOCAL_PRUDENCE=1 scripts/aos-local.sh # governed by a local Prudence; reads .local/prudence.env
@@ -14,6 +14,7 @@ set -euo pipefail
 # Expects the AOS repository next to this one; set AOS_REPO otherwise.
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AOS_REPO="${AOS_REPO:-$KIT/../aos-agentic-orchestration-system}"
+PORT="${AOS_LOCAL_PORT:-8080}"
 LOCAL="$KIT/.local"
 mkdir -p "$LOCAL"
 
@@ -44,13 +45,13 @@ fi
 # `oversight` role.
 export AOS_GOVERNANCE_MODEL="${AOS_LOCAL_GOVERNANCE_MODEL:-$KIT/../prudence-governance/contract/governance/templates/banking.yaml}"
 [[ -f "$AOS_GOVERNANCE_MODEL" ]] || { echo "governance model not found: $AOS_GOVERNANCE_MODEL (set AOS_LOCAL_GOVERNANCE_MODEL)" >&2; exit 1; }
-# :9000 is taken by other local services, so the mocks stay on ports of their own; the gRPC risk
+# The mocks stay off their default :9000 (often taken by other local services); the gRPC risk
 # mock backs protocols.customer_review.
 export AOS_MOCK_PORT=18091 AOS_MOCK_BASE_URL=http://127.0.0.1:18091
 export AOS_MOCK_GRPC_PORT=18092 AOS_MOCK_GRPC_TARGET=127.0.0.1:18092
 export AOS_OPENAPI_TESTAPI_URL=http://127.0.0.1:18091/mock/openapi
 # Without it AOS sends providers no callback URL, and await_callback pipelines wait until they time out.
-export AOS_CALLBACK_BASE_URL=http://127.0.0.1:8080
+export AOS_CALLBACK_BASE_URL=http://127.0.0.1:$PORT
 # The custody mock signs its callbacks and AOS checks them; a fresh secret per run.
 CUSTODY_CALLBACK_SECRET="$(openssl rand -hex 32)"
 export CUSTODY_CALLBACK_SECRET AOS_MOCK_CALLBACK_SECRET="$CUSTODY_CALLBACK_SECRET"
@@ -62,4 +63,4 @@ mkdir -p "$AOS_WORKSPACE_ROOT"
 "$LOCAL/mocks" &
 MOCKS=$!
 trap 'kill "$MOCKS" 2>/dev/null' EXIT
-"$LOCAL/aos" -port 8080
+"$LOCAL/aos" -port "$PORT"

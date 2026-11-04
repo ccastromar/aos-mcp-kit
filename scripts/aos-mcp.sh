@@ -4,7 +4,7 @@
 set -euo pipefail
 
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-AOS_BASE_URL=http://127.0.0.1:8080
+AOS_BASE_URL="http://127.0.0.1:${AOS_LOCAL_PORT:-8080}"
 
 response="$(curl -fsS --max-time 5 -X POST "$AOS_BASE_URL/auth/login" \
   -H 'Content-Type: application/json' \
